@@ -11,6 +11,25 @@ import matplotlib.pyplot as plt
 import os
 from collections import Counter
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+from keras.engine.topology import Layer
+
+
+class DistanceLayer(Layer):
+    def __init__(self,output_dim, **kwargs):
+        self.output_dim = output_dim
+        super(DistanceLayer, self).__init__(**kwargs)
+
+    def call(self, input):
+        return self.exponent_neg_manhattan_distance(input[0], input[1])
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0][0], self.output_dim)
+
+    def exponent_neg_manhattan_distance(self, sent_left, sent_right):
+        return K.exp(-K.sum(K.abs(sent_left - sent_right), axis=1, keepdims=True))
+
+
+
 
 class SiameseNetwork:
     def __init__(self):
@@ -21,7 +40,7 @@ class SiameseNetwork:
         self.model_path = os.path.join(cur, 'model/tokenvec_bilstm2_siamese_model.h5')
         self.datas, self.word_dict = self.build_data()
         self.EMBEDDING_DIM = 300
-        self.EPOCHS = 20
+        self.EPOCHS = 80
         self.BATCH_SIZE = 512
         self.NUM_CLASSES = 2
         self.VOCAB_SIZE = len(self.word_dict)
@@ -152,7 +171,7 @@ class SiameseNetwork:
                                     self.EMBEDDING_DIM,
                                     weights=[self.embedding_matrix],
                                     input_length=self.TIME_STAMPS,
-                                    trainable=False,
+                                    trainable=True,
                                     mask_zero=True)
 
         left_input = Input(shape=(self.TIME_STAMPS,), dtype='float32')
@@ -165,8 +184,7 @@ class SiameseNetwork:
         left_output = shared_lstm(encoded_left)
         right_output = shared_lstm(encoded_right)
 
-        distance = Lambda(lambda x: self.exponent_neg_manhattan_distance(x[0], x[1]),
-                          output_shape=lambda x: (x[0][0], 1))([left_output, right_output])
+        distance = DistanceLayer(1)([left_output, right_output])
 
         model = Model([left_input, right_input], distance)
         model.compile(loss='binary_crossentropy',
@@ -189,7 +207,7 @@ class SiameseNetwork:
                               batch_size=self.BATCH_SIZE,
                               epochs=self.EPOCHS,
                             )
-        self.draw_train(history)
+        #self.draw_train(history)
         model.save(self.model_path)
         return model
 
